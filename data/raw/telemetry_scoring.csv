@@ -1,0 +1,6 @@
+vehicle_id,trip_id,avg_speed,max_speed,brake_events,hard_brake_events,rain_intensity,is_night
+11,201,44.0,81.2,24,4,0.3,0
+12,202,37.5,69.5,36,7,0.6,1
+13,203,53.2,96.1,16,2,0.0,0
+14,204,34.8,67.0,41,8,0.9,1
+15,205,46.7,87.9,28,4,0.2,0
