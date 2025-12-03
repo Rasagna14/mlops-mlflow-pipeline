@@ -1,68 +1,51 @@
 import mlflow
 import mlflow.sklearn
-import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+import pandas as pd
+import os
 
-import config
-from utils import build_features
+
+def load_data(path: str):
+    return pd.read_csv(path)
 
 
-def main():
-    # Configure MLflow
-    mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(config.EXPERIMENT_NAME)
+def train_model(df: pd.DataFrame):
 
-    # Load data
-    df = pd.read_csv(config.TRAINING_DATA_PATH)
+    X = df.drop("target", axis=1)
+    y = df["target"]
 
-    X = build_features(df)
-    y = df["failure_within_24h"]
-
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
     )
 
-    params = {
-        "n_estimators": 200,
-        "max_depth": 4,
-        "min_samples_split": 2,
-        "min_samples_leaf": 1,
-        "random_state": 42,
-    }
+    with mlflow.start_run():
 
-    with mlflow.start_run(run_name="rf_telemetry_risk"):
-        model = RandomForestClassifier(**params)
+        mlflow.autolog()  # ← automatically logs params, metrics, model
+
+        model = RandomForestRegressor(
+            n_estimators=120,
+            max_depth=10,
+            random_state=42
+        )
         model.fit(X_train, y_train)
 
-        # Validation metrics
-        val_probs = model.predict_proba(X_val)[:, 1]
-        auc = roc_auc_score(y_val, val_probs)
+        # Evaluate
+        preds = model.predict(X_test)
+        rmse = mean_squared_error(y_test, preds, squared=False)
 
-        # Log parameters + metrics
-        mlflow.log_params(params)
-        mlflow.log_metric("val_auc", float(auc))
+        # Manual logging for visibility
+        mlflow.log_metric("rmse", rmse)
 
-        # Feature importances as an artifact
-        importance_df = (
-            pd.DataFrame(
-                {
-                    "feature": X.columns,
-                    "importance": model.feature_importances_,
-                }
-            )
-            .sort_values("importance", ascending=False)
-        )
-        importance_df.to_csv("feature_importances.csv", index=False)
-        mlflow.log_artifact("feature_importances.csv")
+        # Register model in MLflow Registry
+        model_uri = mlflow.get_artifact_uri("model")
+        mlflow.register_model(model_uri, "telemetry_model")  # ← creates versioned model
 
-        # Log model
-        mlflow.sklearn.log_model(model, artifact_path="model")
-
-        print(f"Training complete. Validation AUC: {auc:.3f}")
-        print(f"Run ID: {mlflow.active_run().info.run_id}")
+        print(f"Model trained and registered with RMSE: {rmse:.4f}")
 
 
 if __name__ == "__main__":
-    main()
+    data_path = "data/processed/telemetry_features.csv"
+    df = load_data(data_path)
+    train_model(df)
